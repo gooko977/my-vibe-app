@@ -2,15 +2,13 @@
 전국 인구 지도 - Streamlit 앱
 --------------------------------
 시군구별 인구 비율(유소년 / 고령)을 색으로 나눠 지도에 표시합니다.
-왼쪽 옵션에서 연도 · 인구 종류 · 지역을 바꿔가며 볼 수 있고,
-병원·학교 위치 CSV 파일을 올리면 지도 위에 점으로 함께 볼 수 있습니다.
+왼쪽 옵션에서 연도 · 인구 종류 · 지역을 바꿔가며 볼 수 있습니다.
 """
 
 import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-import plotly.graph_objects as go
 import requests
 
 # ---------------------------------------------------------
@@ -90,61 +88,6 @@ else:
 # ④ 인구를 그래프로도 한눈에 보고 싶을 때 켜는 옵션
 그래프_표시 = st.sidebar.checkbox("📊 인구 그래프로 보기", value=True)
 
-
-# ---------------------------------------------------------
-# 3-1. 사이드바: 공공기관(병원·학교) 위치 파일 업로드
-# ---------------------------------------------------------
-st.sidebar.header("🏥 공공기관 위치 표시")
-st.sidebar.caption(
-    "위도·경도가 담긴 CSV 파일을 올리면 인구 지도 위에 점으로 표시됩니다. "
-    "열 이름에 '위도'/'경도'(또는 lat/lon) 가 있으면 자동으로 찾습니다."
-)
-
-병원_파일 = st.sidebar.file_uploader("병원 위치 CSV 업로드", type=["csv"], key="hospital")
-병원_표시 = st.sidebar.checkbox("🔴 병원 표시", value=병원_파일 is not None)
-
-학교_파일 = st.sidebar.file_uploader("학교 위치 CSV 업로드", type=["csv"], key="school")
-학교_표시 = st.sidebar.checkbox("🔵 학교 표시", value=학교_파일 is not None)
-
-
-def 위치_데이터_불러오기(uploaded_file):
-    """업로드한 CSV에서 이름/위도/경도 열을 자동으로 찾아 정리해 주는 함수"""
-    if uploaded_file is None:
-        return None
-
-    # 한글 CSV는 인코딩이 다른 경우가 많아 두 가지 방식을 시도합니다.
-    try:
-        원본 = pd.read_csv(uploaded_file)
-    except UnicodeDecodeError:
-        uploaded_file.seek(0)
-        원본 = pd.read_csv(uploaded_file, encoding="cp949")
-
-    # 열 이름 후보들 (자주 쓰이는 이름들을 미리 나열)
-    위도_후보 = ["위도", "lat", "Lat", "LAT", "latitude", "Y", "y"]
-    경도_후보 = ["경도", "lon", "Lon", "LON", "longitude", "X", "x"]
-    이름_후보 = ["이름", "명칭", "시설명", "병원명", "학교명", "기관명", "name", "Name"]
-
-    위도_열 = next((c for c in 원본.columns if c in 위도_후보), None)
-    경도_열 = next((c for c in 원본.columns if c in 경도_후보), None)
-    이름_열 = next((c for c in 원본.columns if c in 이름_후보), None)
-
-    if 위도_열 is None or 경도_열 is None:
-        st.sidebar.error("파일에서 위도/경도 열을 찾지 못했어요. 열 이름을 확인해 주세요.")
-        return None
-
-    정리됨 = pd.DataFrame(
-        {
-            "이름": 원본[이름_열] if 이름_열 is not None else "이름 정보 없음",
-            "위도": pd.to_numeric(원본[위도_열], errors="coerce"),
-            "경도": pd.to_numeric(원본[경도_열], errors="coerce"),
-        }
-    ).dropna(subset=["위도", "경도"])
-
-    return 정리됨
-
-
-병원_위치 = 위치_데이터_불러오기(병원_파일)
-학교_위치 = 위치_데이터_불러오기(학교_파일)
 
 st.write(f"### {선택_연도}년 · {지표명} · {선택_시도}")
 
@@ -249,33 +192,6 @@ fig.update_geos(visible=False, fitbounds="locations")
 # 심플한 디자인: 여백을 줄이고, 경계선을 얇고 옅게
 fig.update_traces(marker_line_width=0.5, marker_line_color="white", selector=dict(type="choropleth"))
 
-# --------- 병원·학교 위치를 점(마커)으로 지도 위에 얹기 ---------
-if 병원_표시 and 병원_위치 is not None and len(병원_위치) > 0:
-    fig.add_trace(
-        go.Scattergeo(
-            lon=병원_위치["경도"],
-            lat=병원_위치["위도"],
-            text=병원_위치["이름"],
-            mode="markers",
-            marker=dict(size=6, color="#e6194b", symbol="circle", line=dict(width=0.5, color="white")),
-            name="병원",
-            hovertemplate="🏥 %{text}<extra></extra>",
-        )
-    )
-
-if 학교_표시 and 학교_위치 is not None and len(학교_위치) > 0:
-    fig.add_trace(
-        go.Scattergeo(
-            lon=학교_위치["경도"],
-            lat=학교_위치["위도"],
-            text=학교_위치["이름"],
-            mode="markers",
-            marker=dict(size=6, color="#1f78d1", symbol="triangle-up", line=dict(width=0.5, color="white")),
-            name="학교",
-            hovertemplate="🏫 %{text}<extra></extra>",
-        )
-    )
-
 fig.update_layout(
     margin=dict(l=0, r=0, t=0, b=0),
     legend_title_text=지표명,
@@ -290,12 +206,6 @@ fig.update_layout(
 )
 
 st.plotly_chart(fig, use_container_width=True)
-
-# 파일을 올렸지만 실제로 지도에 찍힌 점이 없을 때 안내 문구
-if 병원_표시 and (병원_위치 is None or len(병원_위치) == 0):
-    st.info("병원 위치 CSV를 업로드하면 지도 위에 빨간 점으로 표시돼요.")
-if 학교_표시 and (학교_위치 is None or len(학교_위치) == 0):
-    st.info("학교 위치 CSV를 업로드하면 지도 위에 파란 세모로 표시돼요.")
 
 
 # ---------------------------------------------------------
